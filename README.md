@@ -1,2 +1,2 @@
 # Digital-Marketing
-A project
+A project for the Digital Marketing course project.
