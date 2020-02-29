@@ -1,0 +1,398 @@
+---
+title: "Laboratorio Digital Marketing - Progetto pt.2"
+author: "Borroni Alessandro, Giugliano Mirko, Saracino Giovanna"
+date: "22 maggio 2019"
+output: html_document
+---
+
+
+```{r}
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+
+
+#### IMPORTING DATA SETS ####
+
+### set working directory ###
+dir = "C:/Users/MioPC/Documents/Università degli Studi di Milano-Bicocca/IV° Anno - Data Science/Web Marketing and Communication Management/Laboratorio/Progetto/DS_Lab_digital_marketing/"
+setwd(dir)
+
+### clients fidelity subscriptions ###
+df_1_cli_fid <- read.csv2("raw_1_cli_fid.csv", na.strings = c("NA", ""))
+
+### clients accounts details ###
+df_2_cli_account <- read.csv2("raw_2_cli_account.csv", na.strings = c("NA", ""))
+  
+### clients addresses ###
+df_3_cli_address <- read.csv2("raw_3_cli_address.csv", na.strings = c(""), stringsAsFactors = F)
+
+### clients privacy ###
+df_4_cli_privacy <- read.csv2("raw_4_cli_privacy.csv" , na.strings = c("NA", ""))
+
+## client ticket
+df_7_scontrini <- read.csv2("raw_7_tic.csv" , na.strings = c("NA", ""))
+
+# setting seed
+
+set.seed(12345)
+
+# abbiamo osservato che il primo scontrino è sttao emesso il 2018-05-01 e l'ultimo scontrino è stato emesso il 2019-04-30
+df_7_scontrini$DATETIME <- as.Date(df_7_scontrini$DATETIME)
+#min(df_7_scontrini$DATETIME), max(df_7_scontrini$DATETIME)
+
+df <- df_7_scontrini
+df <- df[order(df$ID_CLI,rev(df$DATETIME)),]
+dft2 <- df %>%
+    group_by(ID_SCONTRINO) %>% 
+    summarise(ID_CLI = max(ID_CLI),DATETIME=max(DATETIME))
+dft2 <- dft2[order(dft2$ID_CLI,rev(dft2$DATETIME)),]
+
+dft3 <- dft2 %>% group_by(ID_CLI) %>% summarise(tot = n()) %>% filter(tot>1) #quanti acquisti per ogni cliente
+dft3 <- left_join(dft3,dft2,by="ID_CLI") #aggiungiamo id_scontrino & datetime
+dft4 <- dft3 %>% 
+  arrange(desc(DATETIME)) %>% 
+  group_by(ID_CLI) %>% 
+  summarise(last=nth(DATETIME,1),secondl=nth(DATETIME,2))
+
+
+p <- ggplot(dft4, aes(x= as.numeric(last - secondl))) + 
+  geom_histogram(color="black", fill="lightblue") +
+  geom_vline(aes(xintercept = 60), color="blue", linetype="dashed", size=1) +
+  labs(title = "Ultimo acquisto - penultimo acquisto", x = "days", y = "frequency") +
+  scale_x_continuous(breaks=seq(0,300,30)) +
+  theme_minimal()
+
+#ggsave("diff_giorni_acqu.jpg", p)
+
+```
+
+```{r}
+# l'80% dei clienti riacquista entro 60 days, quindi consideriamo un cliente come churn i clienti che non riacquistano entro due mesi e mezzo (entro il 2019/02/16)
+q <- ggplot(dft4, aes(as.numeric(last-secondl), cumsum(stat(count)/nrow(dft4)))) +
+  geom_freqpoly(binwidth = 8,alpha=0.8,col="black") +
+  labs(title = "Percentuale cumulativa di riacquisto", x = "days", y = "Cumulative Percentage of Repurchase") +
+  geom_line(data = data.frame(days=1:365,const=0.80),aes(days,const),col="blue") +
+  geom_line(data = data.frame(y=seq(0,1,0.1),x=60),aes(x,y),col="blue") +
+  scale_x_continuous(breaks=seq(0,300,30)) +
+  theme_classic()
+
+#ggsave("cum_perc_riacqu.jpg", q)
+
+```
+```{r}
+#creiamo la colonna dei churner
+df_churn <- df_7_scontrini %>%
+  group_by(ID_CLI) %>%
+  summarize(LAST_PURCHASE_DATE = max(DATETIME),
+            TOTAL_PURCHASE = sum(IMPORTO_LORDO),
+            NUMBER_OF_PURCHASE=n())   %>%
+  mutate(CHURN = as.numeric(LAST_PURCHASE_DATE < as.Date("2019-02-16"))) %>%
+  select(CHURN,ID_CLI,LAST_PURCHASE_DATE,TOTAL_PURCHASE,NUMBER_OF_PURCHASE)
+
+```
+
+```{r}
+# pulizia prima di unire tutti i dataset
+df_1_cli_fid_clean <- df_1_cli_fid
+
+## formattiamo le date ##
+df_1_cli_fid_clean <- df_1_cli_fid_clean %>%
+  mutate(DT_ACTIVE = as.Date(DT_ACTIVE))
+
+## formattiamo le categorie numeriche come factor ##
+df_1_cli_fid_clean <- df_1_cli_fid_clean %>%
+  mutate(ID_NEG = as.factor(ID_NEG)) %>%
+  mutate(TYP_CLI_FID = as.factor(TYP_CLI_FID)) %>%
+  mutate(STATUS_FID = as.factor(STATUS_FID))
+
+## (consistency control) numero di fid per client ##
+num_fid_x_cli <- df_1_cli_fid_clean %>%
+  group_by(ID_CLI) %>%
+  summarize(NUM_FIDs =  n_distinct(ID_FID), NUM_DATEs = n_distinct(DT_ACTIVE))
+
+dist_num_fid_x_cli <- num_fid_x_cli %>%
+  group_by(NUM_FIDs, NUM_DATEs) %>%
+  summarize(TOT_CLIs = n_distinct(ID_CLI))
+
+## teniamo il primo fid e l'ultimo fid ##
+# primo --> registration date
+# ultimo --> features
+df_1_cli_fid_first <- df_1_cli_fid_clean %>%
+  group_by(ID_CLI) %>%
+  filter(DT_ACTIVE == min(DT_ACTIVE)) %>%
+  arrange(ID_FID) %>%
+  filter(row_number() == 1) %>%
+  ungroup() %>%
+  as.data.frame()
+
+df_1_cli_fid_last <- df_1_cli_fid_clean %>%
+  group_by(ID_CLI) %>%
+  filter(DT_ACTIVE == max(DT_ACTIVE)) %>%
+  arrange(desc(ID_FID)) %>%
+  filter(row_number() == 1) %>%
+  ungroup() %>%
+  as.data.frame()
+
+df_1_cli_fid_clean <- df_1_cli_fid_last %>%
+  left_join(df_1_cli_fid_first %>%
+              select(ID_CLI, FIRST_ID_NEG = ID_NEG, FIRST_DT_ACTIVE = DT_ACTIVE)
+            , by = 'ID_CLI') %>%
+  left_join(num_fid_x_cli %>%
+              select(ID_CLI, NUM_FIDs) %>%
+              mutate(NUM_FIDs = as.factor(NUM_FIDs))
+            , by = 'ID_CLI')
+```
+
+```{r}
+#pulizia 
+df_2_cli_account_clean <- df_2_cli_account
+
+## formattiamo boolean come factor ##
+df_2_cli_account_clean <- df_2_cli_account_clean %>%
+  mutate(W_PHONE = as.factor(W_PHONE))
+
+## formattiamo le categorie numeriche come factor ##
+df_2_cli_account_clean <- df_2_cli_account_clean %>%
+  mutate(TYP_CLI_ACCOUNT = as.factor(TYP_CLI_ACCOUNT))
+
+## correggiamo gli NA##
+# usiamo il package forcats
+library("forcats")
+df_2_cli_account_clean <- df_2_cli_account_clean %>%
+  mutate(W_PHONE = fct_explicit_na(W_PHONE, "0")) %>%
+  mutate(EMAIL_PROVIDER = fct_explicit_na(EMAIL_PROVIDER, "(missing)")) %>%
+  mutate(TYP_JOB = fct_explicit_na(TYP_JOB, "(missing)"))
+
+
+# vi sono molti missing value in EMAIL_PROVIDER per essere una categoria utile
+# manteniamo i valori prù frequenti e (missing) e cambiamo gli altri in "OTHER"
+freq_email_providers <- df_2_cli_account_clean %>%
+  group_by(EMAIL_PROVIDER) %>%
+  summarize(TOT_CLIs = n_distinct(ID_CLI)) %>%
+  mutate(PERCENT = TOT_CLIs/sum(TOT_CLIs)) %>%
+  arrange(desc(PERCENT)) %>%
+  mutate(PERCENT_COVERED = cumsum(TOT_CLIs)/sum(TOT_CLIs))
+
+clean_email_providers <- freq_email_providers %>%
+  mutate(EMAIL_PROVIDER = as.character(EMAIL_PROVIDER)) %>%
+  mutate(AUX = if_else(PERCENT_COVERED < 0.85 | (PERCENT_COVERED > 0.85 & lag(PERCENT_COVERED) < 0.85), 1,0)) %>%
+  mutate(EMAIL_PROVIDER_CLEAN = if_else(AUX | EMAIL_PROVIDER == "(missing)", EMAIL_PROVIDER, "others"))
+
+df_2_cli_account_clean <- df_2_cli_account %>%
+  mutate(EMAIL_PROVIDER = as.character(EMAIL_PROVIDER)) %>%
+  left_join(clean_email_providers %>%
+              select(EMAIL_PROVIDER, EMAIL_PROVIDER_CLEAN)
+            , by = "EMAIL_PROVIDER") %>%
+  select(-EMAIL_PROVIDER,-TYP_JOB) %>%
+  mutate(EMAIL_PROVIDER_CLEAN = as.factor(EMAIL_PROVIDER_CLEAN))%>%
+  mutate(EMAIL_PROVIDER_CLEAN = fct_explicit_na(EMAIL_PROVIDER_CLEAN, "(missing)"))%>%
+  mutate(W_PHONE = as.factor(W_PHONE)) %>%
+  mutate(W_PHONE = fct_explicit_na(W_PHONE, "0"))
+
+```
+
+```{r}
+df_3_cli_address_clean <- df_3_cli_address
+
+## convertiamo PRV e REGION in factor ##
+df_3_cli_address_clean <- df_3_cli_address_clean %>%
+  mutate(PRV = as.factor(PRV)) %>%
+  mutate(REGION = as.factor(REGION)) %>%
+  distinct()
+
+# cancelliamo i record senza CAP - PRV - REGION
+df_3_cli_address_clean <- df_3_cli_address_clean %>%
+  filter(!is.na(CAP) & !is.na(PRV) & !is.na(REGION))
+```
+
+```{r}
+df_4_cli_privacy_clean <- df_4_cli_privacy
+
+# formattiamo i boolean in factor
+df_4_cli_privacy_clean <- df_4_cli_privacy_clean %>%
+  mutate(FLAG_PRIVACY_1 = as.factor(FLAG_PRIVACY_1)) %>%
+  mutate(FLAG_PRIVACY_2 = as.factor(FLAG_PRIVACY_2)) %>%
+  mutate(FLAG_DIRECT_MKT = as.factor(FLAG_DIRECT_MKT))
+
+```
+DF MASTER definition
+```{r}
+df_master <- df_1_cli_fid_clean %>%
+  select(ID_CLI, ID_NEG, TYP_CLI_FID, COD_FID, STATUS_FID) %>%
+  left_join(df_2_cli_account_clean
+            , by = "ID_CLI") %>%
+  left_join(df_3_cli_address_clean %>%
+              select(ID_ADDRESS, PRV, REGION)
+            , by = "ID_ADDRESS") %>%
+  left_join(df_4_cli_privacy_clean
+            , by = "ID_CLI") %>%
+  select(-ID_ADDRESS)
+
+
+#dataset finale contenente i churner
+df_master_churn <- df_churn %>%
+  left_join(df_master, by="ID_CLI")%>%
+  mutate(PRV = fct_explicit_na(PRV)) %>%
+  mutate(REGION = fct_explicit_na(REGION))
+
+
+```
+Addestriamo i modelli
+```{r}
+library(e1071)
+library(caret)
+library(pander)
+
+df1 <- df_master_churn #86828 NON CHURNER & 125296 CHURNER SU 212124 clienti
+#il 41% dei clienti è non churner mentre il 59% è churner
+df1 <- df1[,-c(2,3,13)] #rimuoviamo id client, purchase date and prov - non significative per questa analisi
+str(df1)
+
+#trasformazione in factor
+df1$CHURN <- as.factor(df1$CHURN)
+df1$TYP_CLI_ACCOUNT <- as.factor(df1$TYP_CLI_ACCOUNT)
+
+summary(df1)
+str(df1)
+
+df_mod <- df1    
+
+#Train e Test set 
+train_index <- createDataPartition(df_mod$CHURN, 
+                                   p = .70, 
+                                   list = FALSE, 
+                                   times = 1)
+
+train <- df_mod[train_index,]
+test <- df_mod[-train_index,]
+
+#il train è sbilanciato
+churn0 <- train %>% filter(CHURN == 0) #contiene 60780 rows
+churn1 <- train %>% filter(CHURN == 1) #contiene 87708 rows
+
+balance1 <- churn1[sample(nrow(churn1), nrow(churn0)),] # ora churn1 contiene 60780 rows
+
+train_balanced <- rbind(balance1, churn0)
+
+train <- train_balanced #caddestriamo correttamente i modelli
+
+```
+
+```{r}
+library(rpart)
+library(rpart.plot)
+library(MLmetrics)
+library(randomForest)
+library(Rcmdr)
+library(glmnet)
+#Recursive Partitioning And Regression Trees
+tree <- rpart(CHURN ~ ., data= train)
+rpart.plot(tree, extra = "auto")
+summary(tree) #num di acquisti è la variabile più importante
+printcp(tree) #complexity parameter
+
+#prediction rpart
+pred <- rpart.predict(tree, test[,-1],type = "class")
+p1 <- unlist(pred)
+confusionMatrix( p1, test$CHURN)
+
+recall(p1,test$CHURN,relevant = '1') #0,76
+precision(p1,test$CHURN,relevant = '1') #0,68
+F1_Score(p1,test$CHURN,positive = '1') #0,71
+acc_rpart <- Accuracy(pred,test$CHURN) #0,65
+
+
+#Random Forest 
+memory.limit(100000)
+tree_rf <- randomForest(CHURN ~ ., data= train, ntree = 100)
+print(tree_rf)
+#prediction rf
+pred_rf <- rpart.predict(tree_rf, test[,-1], type = "class")
+confusionMatrix(pred_rf, test$CHURN)
+
+recall(pred_rf, test$CHURN,relevant = '1') #0.70
+precision(pred_rf ,test$CHURN,relevant = '1') # 0.70
+F1_Score(pred_rf ,test$CHURN,positive = '1') # 0.70
+acc_rf <- Accuracy(pred_rf, test$CHURN) #0.64
+
+```
+
+
+```{r}
+train1 <- train
+test1 <- test
+
+train1$CHURN <- as.factor(train1$CHURN)
+
+str(train1)
+
+#Naive Bayes
+nb <- naiveBayes(CHURN ~ ., train1 )
+print(nb)
+pred_nb <- predict(nb, test1[,-1])
+confusionMatrix(pred_nb, test1$CHURN)
+
+recall(pred_nb, test1$CHURN,relevant = '1') #0,94
+precision(pred_nb ,test1$CHURN,relevant = '1') #0,62
+F1_Score(pred_nb ,test1$CHURN,positive = '1') #0,75
+acc_nb <- Accuracy(pred_nb, test1$CHURN) #0,63
+```
+```{r}
+#Generalized Linear Models
+gl <- glm(CHURN ~ ., train1, family = "binomial")
+p1 = predict(gl, test)
+pred1 = if_else(p1>0.5,1,0)
+table_gl = table(pred1, test$CHURN)
+pred1 <- as.factor(pred1)
+confusionMatrix(table_gl)
+#evaluate
+recall(pred1, test$CHURN, relevant = "1") #0.19
+precision(pred1, test$CHURN, relevant = "1") # 0.77
+F1_Score(pred1 ,test$CHURN,positive = '1') # 0.31
+acc_glm <- Accuracy(pred1, test$CHURN) #0.49
+
+
+```
+
+```{r}
+library(ipred)
+
+#Bagging Classification And Regression Trees
+bag <- bagging(CHURN ~ ., train1, nbagg = 25)
+
+pred_bag <- predict(bag, test1[,-1])
+confusionMatrix(pred_bag, test1$CHURN)
+recall(pred_bag, test1$CHURN,relevant = '1') #0,61
+precision(pred_bag ,test1$CHURN,relevant = '1') #0,68
+F1_Score(pred_bag ,test1$CHURN,positive = '1') #0,64
+acc_bag <- Accuracy(pred_bag, test1$CHURN) #0,60
+
+```
+
+```{r}
+modello <- c("rpart", "rf", "naiveBayes", "glm", "bagging")
+value <- c(0.65,0.64,0.63,0.49,0.60 )
+
+df_accuracy <- data.frame(modello, value )
+
+#png("accuracy_churn.png")
+plot(df_accuracy, main = "Accuracy dei modelli", xlab = "modello", ylab = "accuracy", col.main = "blue", font.main = 4)
+#dev.off()
+```
+
+```{r}
+modello_f <- c("rpart", "rf", "naiveBayes", "glm", "bagging")
+value_f <- c(0.71,0.70,0.75,0.31,0.64 )
+
+df_f1score <- data.frame(modello_f, value_f )
+
+#png("f1_churn.png")
+plot(df_f1score, main = "F1 score", xlab = "modello", ylab = "F1 score", col.main = "blue", font.main = 4)
+#dev.off()
+```
+
+```{r}
+#writeLines(capture.output(sessionInfo()), "sessionInfo.txt")
+```
+

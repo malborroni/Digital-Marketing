@@ -1,0 +1,1303 @@
+---
+title: "Laboratorio Digital Marketing - Progetto pt. 1"
+author: "Borroni Alessandro, Giugliano Mirko, Saracino Giovanna"
+date: "22 maggio 2019"
+output: html_document
+---
+
+# Modelling in Marketing
+
+### Impostazione della working directory
+
+```{r}
+
+dir = "C:/Users/MioPC/Documents/Università degli Studi di Milano-Bicocca/IV° Anno - Data Science/Web Marketing and Communication Management/Laboratorio/Progetto/DS_Lab_digital_marketing/"
+setwd(dir)
+
+```
+
+### Importazione delle librerie
+
+```{r results='hide'}
+
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+library(magrittr)
+library(pander)
+library(tidyverse)
+library(wesanderson)
+
+```
+
+
+### Importazione dei Dataset
+
+```{r}
+
+fidelity <- read.csv2('raw_1_cli_fid.csv', na.strings = c("NA", ""))
+account <- read.csv2('raw_2_cli_account.csv', na.strings = c("NA", ""))
+address <- read.csv2('raw_3_cli_address.csv', na.strings = c("NA", ""))
+privacy <- read.csv2('raw_4_cli_privacy.csv', na.strings = c("NA", ""))
+camp_cat <- read.csv2('raw_5_camp_cat.csv', na.strings = c("NA", ""))
+camp_ev <- read.csv2('raw_6_camp_event.csv', na.strings = c("NA", ""))
+tickets <- read.csv2('raw_7_tic.csv', na.strings = c("NA", ""))
+
+```
+
+### Data Exploration - Fase iniziale
+
+#### Dataset n°1:
+
+Mostriamo le prime 10 righe del dataset n°1:
+
+```{r}
+
+pander(head(fidelity, n = 10))
+
+```
+
+Volendo si potrebbe anche optare per un semplice *summary*:
+
+```{r}
+
+pander(str(fidelity))
+pander(summary(fidelity))
+
+```
+
+#### Dataset n°2:
+
+Ripetiamo i passaggi per il n°2:
+
+```{r}
+
+pander(head(account, n = 10))
+
+```
+
+```{r}
+
+pander(str(account))
+pander(summary(account))
+
+```
+
+#### Dataset n°3:
+
+Ripetiamo i passaggi per il n°3:
+
+```{r}
+
+pander(head(address, n = 10))
+
+```
+
+```{r}
+
+pander(str(address))
+pander(summary(address))
+
+```
+
+#### Dataset n°4:
+
+Ripetiamo i passaggi per il n°4:
+
+```{r}
+
+pander(head(privacy, n = 10))
+
+```
+
+```{r}
+
+pander(str(privacy))
+pander(summary(privacy))
+
+```
+
+#### Dataset n°5
+
+Ripetiamo i passaggi per il n°5:
+
+```{r}
+
+pander(head(camp_cat, n = 10))
+
+```
+
+```{r}
+
+pander(str(camp_cat))
+pander(summary(camp_cat))
+
+```
+
+#### Dataset n°6:
+
+Ripetiamo i passaggi per il n°6:
+
+```{r}
+
+pander(head(camp_ev, n = 10))
+
+```
+
+```{r}
+
+pander(str(camp_ev))
+pander(summary(camp_ev))
+
+```
+
+#### Dataset n°7:
+
+Ripetiamo i passaggi per il n°7:
+
+```{r}
+
+pander(head(tickets, n = 10))
+
+```
+
+```{r}
+
+pander(str(tickets))
+pander(summary(tickets))
+
+```
+
+### Data Cleaning
+
+Prima di approcciarci alla pulizia del dataset, creiamo una copia per ogni dataset, al fine di mantenere comunque un backup dei dati prima di modificarli secondo i nostri intenti.
+
+```{r}
+
+fidelity_clean <- fidelity
+account_clean <- account
+address_clean <- address
+privacy_clean <- privacy
+camp_cat_clean <- camp_cat
+camp_ev_clean <- camp_ev
+tickets_clean <- tickets
+
+```
+
+Ora iniziamo la fase di pulizia, partendo dal primo dataset e continuando con tutti quelli che seguono, applicando i medesimi procedimenti.
+
+1. **FIDELITY**
+
+- Formattazione delle date:
+
+```{r}
+
+fidelity_clean <- fidelity_clean %>% mutate(DT_ACTIVE = as.Date(DT_ACTIVE))
+
+```
+
+- Formattazione delle categorie numeriche in fattori:
+
+```{r}
+
+fidelity_clean <- fidelity_clean %>% 
+                  mutate(ID_NEG = as.factor(ID_NEG)) %>%
+                  mutate(TYP_CLI_FID = as.factor(TYP_CLI_FID)) %>%
+                  mutate(STATUS_FID = as.factor(STATUS_FID))
+
+```
+
+- Numero di programmi fedeltà per numero di clienti (controllo sulla consistenza):
+
+```{r}
+
+fidelity_x_client <- fidelity_clean %>%
+                     group_by(ID_CLI) %>%
+                     summarize(NUM_FIDs = n_distinct(ID_FID), NUM_DATEs = n_distinct(DT_ACTIVE))
+
+dist_fidelity_x_client <- fidelity_x_client %>%
+                          group_by(NUM_FIDs, NUM_DATEs) %>%
+                          summarize(TOT_CLIs = n_distinct(ID_CLI))
+
+summary(dist_fidelity_x_client)
+dist_fidelity_x_client
+
+```
+
+Ci sono clienti con molteplici programmi fedeltà. <br>
+Vediamo il fenomeno più nel dettaglio:
+
+```{r}
+
+fidelity_x_client %>% filter(NUM_DATEs == 3)
+
+fidelity %>% filter(ID_CLI == 621814)
+
+```
+
+Manteniamo sia il primo programma fedeltà che l'ultimo: <br>
+1. Primo: data di registrazione;
+2. Secondo: features varie.
+
+```{r}
+
+fidelity_first <- fidelity_clean %>%
+                  group_by(ID_CLI) %>%
+                  filter(DT_ACTIVE == min(DT_ACTIVE)) %>%
+                  arrange(ID_FID) %>%
+                  filter(row_number() == 1) %>%
+                  ungroup() %>%
+                  as.data.frame()
+
+fidelity_last <- fidelity_clean %>%
+                 group_by(ID_CLI) %>%
+                 filter(DT_ACTIVE == max(DT_ACTIVE)) %>%
+                 arrange(desc(ID_FID)) %>%
+                 filter(row_number() == 1) %>%
+                 ungroup() %>%
+                 as.data.frame()
+
+fidelity_clean <- fidelity_last %>%
+                  left_join(fidelity_first %>%
+                            select(ID_CLI, FIRST_ID_NEG = ID_NEG, FIRST_DT_ACTIVE = DT_ACTIVE),
+                            by = "ID_CLI") %>%
+                  left_join(fidelity_x_client %>%
+                            select(ID_CLI, NUM_FIDs) %>%
+                            mutate(NUM_FIDs = as.factor(NUM_FIDs)),
+                            by = "ID_CLI")
+
+```
+
+Controlliamo:
+
+```{r}
+
+str(fidelity_clean)
+summary(fidelity_clean)
+
+```
+
+- Volendo dare un'occhiata alle distribuzioni dal punto di vista grafico:
+
+a. *COD_FID*
+
+```{r}
+
+fidelity_clean %>%
+  group_by(COD_FID) %>%
+  summarize(TOT_CLIs = n_distinct(ID_CLI)) %>%
+  mutate(PERCENT = TOT_CLIs/sum(TOT_CLIs)) %>%
+  arrange(desc(PERCENT))
+
+ggplot(fidelity_clean, aes(x = COD_FID)) + geom_bar()
+
+```
+
+b. *TYP_CLI_FID*
+
+```{r}
+
+fidelity_clean %>%
+  group_by(TYP_CLI_FID) %>%
+  summarize(TOT_CLIs = n_distinct(ID_CLI)) %>%
+  mutate(PERCENT = TOT_CLIs/sum(TOT_CLIs)) %>%
+  arrange(desc(PERCENT))
+
+ggplot(fidelity_clean, aes(x = TYP_CLI_FID)) + geom_bar()
+
+```
+
+c. *STATUS_FID*
+
+```{r}
+
+fidelity_clean %>%
+  group_by(STATUS_FID) %>%
+  summarize(TOT_CLIs = n_distinct(ID_CLI)) %>%
+  mutate(PERCENT = TOT_CLIs/sum(TOT_CLIs)) %>%
+  arrange(desc(PERCENT))
+
+ggplot(fidelity_clean, aes(x = STATUS_FID)) + geom_bar()
+
+```
+
+d. *ID_NEG*
+
+```{r}
+
+fidelity_clean %>%
+  group_by(ID_NEG) %>%
+  summarize(TOT_CLIs = n_distinct(ID_CLI)) %>%
+  mutate(PERCENT = TOT_CLIs/sum(TOT_CLIs))  %>%
+  arrange(desc(PERCENT))
+
+ggplot(fidelity_clean, aes(x = ID_NEG)) + geom_bar()
+
+```
+
+2. **ACCOUNT**
+
+- Formattazione dei valori booleani in fattori:
+
+```{r}
+
+account_clean <- account_clean %>%
+                 mutate(W_PHONE = as.factor(W_PHONE))
+
+```
+
+- Formattazione delle categorie numeriche in fattori:
+
+```{r}
+
+account_clean <- account_clean %>%
+                 mutate(TYP_CLI_ACCOUNT = as.factor(TYP_CLI_ACCOUNT))
+
+```
+
+- Correzione dei valori NA in categorie (ci avvaliamo del pacchetto *forcats*):
+
+```{r}
+
+library(forcats)
+
+account_clean <- account_clean %>%
+                 mutate(W_PHONE = fct_explicit_na(W_PHONE, "0")) %>%
+                 mutate(EMAIL_PROVIDER = fct_explicit_na(EMAIL_PROVIDER, "(missing)")) %>%
+                 mutate(TYP_JOB = fct_explicit_na(TYP_JOB, "(missing)"))
+
+```
+
+- Esplorazione delle distribuzioni: 
+
+a. *COD_FID*
+
+```{r}
+
+account_clean %>%
+  group_by(EMAIL_PROVIDER) %>%
+  summarize(TOT_CLIs = n_distinct(ID_CLI)) %>%
+  mutate(PERCENT = TOT_CLIs/sum(TOT_CLIs)) %>%
+  arrange(desc(PERCENT))
+
+```
+
+b. *EMAIL_PROVIDER*
+
+```{r}
+
+account_clean %>%
+  summarize(TOT_EMAIL_PROVIDER = n_distinct(EMAIL_PROVIDER))
+
+```
+
+Ci sono valori troppo differenti per *EMAIL_PROVIDER* affinché risulti una categoria utile.
+
+c. *W_PHONE*
+
+```{r}
+
+account_clean %>%
+  group_by(W_PHONE) %>%
+  summarize(TOT_CLIs = n_distinct(ID_CLI)) %>%
+  mutate(PERCENT = TOT_CLIs/sum(TOT_CLIs)) %>%
+  arrange(desc(PERCENT))
+
+ggplot(account_clean, aes(x = W_PHONE)) + geom_bar()
+
+```
+
+d. *TYP_JOB*
+
+```{r}
+
+account_clean %>%
+  group_by(TYP_JOB) %>%
+  summarize(TOT_CLIs = n_distinct(ID_CLI)) %>%
+  mutate(PERCENT = TOT_CLIs/sum(TOT_CLIs)) %>%
+  arrange(desc(PERCENT))
+
+account_clean %>%
+  summarize(TOT_TYP_JOB = n_distinct(TYP_JOB))
+
+ggplot(account_clean, aes(x = TYP_JOB)) + geom_bar()
+
+```
+
+Diamo nuovamente un'occhiata:
+
+```{r}
+
+str(account_clean)
+summary(account_clean)
+
+```
+
+Come accennato precedentemente, ci sono troppi valori mancanti per il campo "EMAIL_PROVIDER" affinché risulti una categoria utile. <br>
+Manteniamo i valori più frequenti e (missing) mentre cambiamo i rimanenti in "OTHER":
+
+```{r}
+freq_email_providers <- account_clean %>%
+                        group_by(EMAIL_PROVIDER) %>%
+                        summarize(TOT_CLIs = n_distinct(ID_CLI)) %>%
+                        mutate(PERCENT = TOT_CLIs/sum(TOT_CLIs)) %>%
+                        arrange(desc(PERCENT)) %>%
+                        mutate(PERCENT_COVERED = cumsum(TOT_CLIs)/sum(TOT_CLIs))
+
+head(freq_email_providers, 20)
+
+clean_email_providers <- freq_email_providers %>%
+                         mutate(EMAIL_PROVIDER = as.character(EMAIL_PROVIDER)) %>%
+                         mutate(AUX = if_else(PERCENT_COVERED < 0.85 | (PERCENT_COVERED > 0.85 & lag(PERCENT_COVERED) < 0.85), 1, 0)) %>%
+                         mutate(EMAIL_PROVIDER_CLEAN = if_else(AUX | EMAIL_PROVIDER == "(missing)", EMAIL_PROVIDER, "others"))
+
+head(clean_email_providers, 20)
+
+account_clean <- account_clean %>%
+                 mutate(EMAIL_PROVIDER = as.character(EMAIL_PROVIDER)) %>%
+                 left_join(clean_email_providers %>%
+                        select(EMAIL_PROVIDER, EMAIL_PROVIDER_CLEAN),
+                        by = "EMAIL_PROVIDER") %>%
+                        select(-EMAIL_PROVIDER) %>%
+                 mutate(EMAIL_PROVIDER_CLEAN = as.factor(EMAIL_PROVIDER_CLEAN))
+
+```
+
+- Esplorazione delle distribuzioni:
+
+e. *EMAIL_PROVIDER_CLEAN*
+
+```{r}
+
+account_clean %>%
+  group_by(EMAIL_PROVIDER_CLEAN) %>%
+  summarize(TOT_CLIs = n_distinct(ID_CLI)) %>%
+  mutate(PERCENT = TOT_CLIs/sum(TOT_CLIs)) %>%
+  arrange(desc(PERCENT))
+
+ggplot(account_clean, aes(x = EMAIL_PROVIDER_CLEAN)) + geom_bar()
+
+```
+
+Controlliamo nuovamente:
+
+```{r}
+
+str(account_clean)
+summary(account_clean)
+
+
+```
+
+3. **ADDRESS**
+
+- Conversione di "PRV" e "REGION" in fattori
+
+```{r}
+
+address_clean <- address_clean %>%
+                 mutate(PRV = as.factor(PRV)) %>%
+                 mutate(REGION = as.factor(REGION)) %>%
+                 distinct()
+
+```
+
+- Guardiamo più nel dettaglio il dataset *address*:
+
+```{r}
+
+address_clean %>%
+  group_by(w_CAP = !is.na(CAP), w_PRV = !is.na(PRV), w_REGION = !is.na(REGION)) %>%
+  summarize(TOT_ADDs = n_distinct(ID_ADDRESS))
+
+address_clean %>% select(PRV, REGION) %>% distinct() %>% arrange(desc(nchar(as.character(PRV))))
+
+```
+
+- Eliminazione dell'osservazione senza "CAP", "PRV" e "REGION":
+
+```{r}
+
+address_clean <- address_clean %>%
+  filter(!is.na(CAP) & !is.na(PRV) & !is.na(REGION))
+
+```
+
+- Esplorazione delle distribuzioni:
+
+a. *PRV*
+
+```{r}
+
+address_clean %>%
+  group_by(PRV) %>%
+  summarize(TOT_ADDs = n_distinct(ID_ADDRESS)) %>%
+  mutate(PERCENT = TOT_ADDs/sum(TOT_ADDs)) %>%
+  arrange(desc(PERCENT))
+
+ggplot(address_clean, aes(x = PRV)) + geom_bar()
+
+```
+
+b. *REGION*
+
+```{r}
+
+address_clean %>%
+  group_by(REGION) %>%
+  summarize(TOT_ADDs = n_distinct(ID_ADDRESS)) %>%
+  mutate(PERCENT = TOT_ADDs/sum(TOT_ADDs)) %>%
+  arrange(desc(PERCENT))
+
+ggplot(address_clean, aes(x = REGION)) + geom_bar()
+
+```
+
+Diamo un'occhiata alla situazione:
+
+```{r}
+
+str(address_clean)
+summary(address_clean)
+
+```
+
+4. **PRIVACY**
+
+- Formattazione dei valori booleani in fattori:
+
+```{r}
+
+privacy_clean <- privacy_clean %>%
+                 mutate(FLAG_PRIVACY_1 = as.factor(FLAG_PRIVACY_1)) %>%
+                 mutate(FLAG_PRIVACY_2 = as.factor(FLAG_PRIVACY_2)) %>%
+                 mutate(FLAG_DIRECT_MKT = as.factor(FLAG_DIRECT_MKT))
+
+```
+
+- Esplorazione delle distribuzioni:
+
+a. *FLAG_PRIVACY_1*
+
+```{r}
+
+privacy_clean %>%
+  group_by(FLAG_PRIVACY_1) %>%
+  summarize(TOT_CLIs = n_distinct(ID_CLI)) %>%
+  mutate(PERCENT = TOT_CLIs/sum(TOT_CLIs)) %>%
+  arrange(desc(PERCENT))
+
+ggplot(privacy_clean, aes(x = FLAG_PRIVACY_1)) + geom_bar()
+
+```
+
+b. *FLAG_PRIVACY_2*
+
+```{r}
+
+privacy_clean %>%
+  group_by(FLAG_PRIVACY_2) %>%
+  summarize(TOT_CLIs = n_distinct(ID_CLI)) %>%
+  mutate(PERCENT = TOT_CLIs/sum(TOT_CLIs)) %>%
+  arrange(desc(PERCENT))
+
+ggplot(privacy_clean, aes(x = FLAG_PRIVACY_2)) + geom_bar()
+
+```
+
+c. *FLAG_DIRECT_MKT*
+
+```{r}
+
+privacy_clean %>%
+  group_by(FLAG_DIRECT_MKT) %>%
+  summarize(TOT_CLIs = n_distinct(ID_CLI)) %>%
+  mutate(PERCENT = TOT_CLIs/sum(TOT_CLIs)) %>%
+  arrange(desc(PERCENT))
+
+ggplot(privacy_clean, aes(x = FLAG_DIRECT_MKT)) + geom_bar()
+
+privacy_clean %>%
+  group_by(FLAG_PRIVACY_1, FLAG_PRIVACY_2, FLAG_DIRECT_MKT) %>%
+  summarize(TOT_CLIs = n_distinct(ID_CLI)) %>%
+  mutate(PERCENT = TOT_CLIs/sum(TOT_CLIs)) %>%
+  arrange(desc(PERCENT))
+
+```
+
+Controlliamo:
+
+```{r}
+
+str(privacy_clean)
+summary(privacy_clean)
+
+```
+
+5. **CAMP_CAT**
+
+- Il campo "CHANNEL_CAMP" ha un solo valore, dunque non è rilevante.
+
+```{r}
+
+camp_cat_clean <- camp_cat_clean %>%
+                  select(-CHANNEL_CAMP)
+
+```
+
+- Esplorazione delle distribuzioni:
+
+a. *FLAG_DIRECT_MKT:
+
+```{r}
+
+camp_cat_clean %>%
+  group_by(TYP_CAMP) %>%
+  summarize(TOT_CAMPs = n_distinct(ID_CAMP)) %>%
+  mutate(PERCENT = TOT_CAMPs/sum(TOT_CAMPs)) %>%
+  arrange(desc(PERCENT))
+
+ggplot(camp_cat_clean, aes(x = TYP_CAMP)) + geom_bar()
+
+```
+
+6. **CAMP_EV**
+
+- Nonostante il campo "EVENT_TIME" sia datetime, abbiamo bisogno delle date corrispondenti:
+
+```{r}
+
+camp_ev_clean <- camp_ev_clean %>%
+                 mutate(EVENT_DATE = as.Date(EVENT_DATE, format="%Y-%m-%dT%H:%M:%S"))
+
+```
+
+Ai fini dell'analisi che stiamo fornendo qui, non farebbe alcuna differenza distinguere "ERRORS" e "BOUNCE". <br>
+La soluzione è combinarli in una categoria comune chiamata "FAILURE" con "F" come EVENT_CODE prima di modificare il campo in fattore.
+
+```{r}
+
+camp_ev_clean <- camp_ev_clean %>%
+                 mutate(TYP_EVENT = as.factor(if_else(TYP_EVENT == "E" | TYP_EVENT == "B", "F", as.character(TYP_EVENT))))
+
+```
+
+- Esplorazione delle distribuzioni:
+
+a. Tipo di evento:
+
+```{r}
+
+camp_ev_clean %>%
+  group_by(TYP_EVENT) %>%
+  summarize(TOT_EVENTs = n_distinct(ID_EVENT), TOT_CLIs = n_distinct(ID_CLI), TOT_CAMPs = n_distinct(ID_CAMP)) %>%
+  mutate(PERCENT_EVENT = TOT_EVENTs/sum(TOT_EVENTs), PERCENT_CLI = TOT_CLIs/sum(TOT_CLIs), PERCENT_CAMP = TOT_CAMPs/sum(TOT_CAMPs)) %>%
+  arrange(desc(PERCENT_EVENT), desc(PERCENT_EVENT), desc(PERCENT_CAMP))
+
+ggplot(camp_ev_clean %>% select(TYP_EVENT, ID_EVENT) %>% distinct(), aes(x = TYP_EVENT)) + geom_bar()
+ggplot(camp_ev_clean %>% select(TYP_EVENT, ID_CLI) %>% distinct(), aes(x = TYP_EVENT)) + geom_bar()
+ggplot(camp_ev_clean %>% select(TYP_EVENT, ID_CAMP) %>% distinct(), aes(x = TYP_EVENT)) + geom_bar()
+
+```
+
+b. Date minime e massime:
+
+```{r}
+
+camp_ev_clean %>% summarize(MIN_DATE = min(EVENT_DATE), MAX_DATE = max(EVENT_DATE))
+
+```
+
+### Data Preparation
+
+Il fine ultimo è creare ciò di cui necessitiamo per il nostro modello. <br>
+Dapprima esploriamo la distribuzione:
+
+```{r}
+
+camp_ev_clean_w_type <- camp_ev_clean %>%
+                        left_join(camp_cat_clean,
+                                  by = "ID_CAMP")
+
+```
+
+1. Invii
+
+```{r}
+
+df_sends <- camp_ev_clean_w_type %>%
+            filter(TYP_EVENT == "S") %>%
+            select(-TYP_EVENT) %>%
+            select(ID_EVENT_S = ID_EVENT, ID_CLI, ID_CAMP, TYP_CAMP, ID_DELIVERY, SEND_DATE = EVENT_DATE)
+
+```
+
+2. Aperture
+
+```{r}
+
+df_opens <- camp_ev_clean_w_type %>%
+            filter(TYP_EVENT == "V") %>%
+            select(-TYP_EVENT) %>%
+            select(ID_EVENT_O = ID_EVENT, ID_CLI, ID_CAMP, TYP_CAMP, ID_DELIVERY, OPEN_DATE = EVENT_DATE) %>%
+            group_by(ID_CLI, ID_CAMP, ID_DELIVERY) %>%
+            filter(OPEN_DATE == min(OPEN_DATE)) %>%
+            filter(row_number() == 1) %>%
+            ungroup()
+
+```
+
+c. Click
+
+```{r}
+
+df_clicks <- camp_ev_clean_w_type %>%
+             filter(TYP_EVENT == "C") %>%
+             select(-TYP_EVENT) %>%
+             select(ID_EVENT_C = ID_EVENT, ID_CLI, ID_CAMP, TYP_CAMP, ID_DELIVERY, CLICK_DATE = EVENT_DATE) %>%
+             group_by(ID_CLI, ID_CAMP, ID_DELIVERY) %>%
+             filter(CLICK_DATE == min(CLICK_DATE)) %>%
+             filter(row_number() == 1) %>%
+             ungroup()
+
+```
+
+d. Fallimento
+
+```{r}
+
+df_fails <- camp_ev_clean_w_type %>%
+            filter(TYP_EVENT == "F") %>%
+            select(-TYP_EVENT) %>%
+            select(ID_EVENT_F = ID_EVENT, ID_CLI, ID_CAMP, TYP_CAMP, ID_DELIVERY, FAIL_DATE = EVENT_DATE) %>%
+            group_by(ID_CLI, ID_CAMP, ID_DELIVERY) %>%
+            filter(FAIL_DATE == min(FAIL_DATE)) %>%
+            filter(row_number() == 1) %>%
+            ungroup()
+
+```
+
+e. Unire Invii con Aperture
+
+```{r}
+
+df_sends_w_open <- df_sends %>%
+                   left_join(df_opens, 
+                             by = c("ID_CLI", "ID_CAMP", "ID_DELIVERY", "TYP_CAMP")
+                             ) %>%
+                   filter(is.na(OPEN_DATE) | SEND_DATE <= OPEN_DATE) %>%
+                   mutate(DIFF = as.integer(OPEN_DATE - SEND_DATE))
+
+```
+
+f. Numero di Invii senza Aperture
+
+```{r}
+
+df_sends_w_open %>%
+  group_by(w_open = !is.na(DIFF)) %>%
+  summarize(TOT_SENTs = n_distinct(ID_EVENT_S)) %>%
+  mutate(PERCENT = TOT_SENTs/sum(TOT_SENTs)) %>%
+  arrange(desc(PERCENT))
+
+ggplot(df_sends_w_open, aes(x =! is.na(DIFF))) + geom_bar()
+
+```
+
+g. Distribuzione dei giorni di Aperture
+
+```{r}
+
+df_sends_w_open %>% filter(!is.na(DIFF)) %>%
+  group_by(DIFF) %>%
+  summarize(TOT_EVENTs = n_distinct(ID_EVENT_S)) %>%
+  arrange(DIFF) %>%
+  mutate(PERCENT_COVERED = cumsum(TOT_EVENTs)/sum(TOT_EVENTs))
+
+ggplot(df_sends_w_open %>% filter(!is.na(DIFF)) %>%
+         group_by(DIFF) %>%
+         summarize(TOT_EVENTs = n_distinct(ID_EVENT_S)) %>%
+         arrange(DIFF) %>%
+         mutate(PERCENT_COVERED = cumsum(TOT_EVENTs)/sum(TOT_EVENTs)) %>%
+         filter(DIFF <= 14), 
+         aes(y = PERCENT_COVERED, x = DIFF)) + geom_line() + geom_point() + scale_x_continuous(breaks = seq(0,14,2), minor_breaks = 0:14)
+
+```
+
+Possiamo scegliere come funzione-finestra 2 giorni
+
+```{r}
+
+window_days <- 2
+
+```
+
+### Costruzione del Datamart
+
+La nostra variabile target consiste nel capire se una mail inviata viene aperta nel periodo di tempo indicato dai giorni della finestra summenzionata (2 giorni).
+
+```{r}
+
+target_event <- df_sends_w_open %>%
+                mutate(TARGET = as.factor(if_else(!is.na(DIFF) & DIFF <= window_days, "1", "0"))) %>%
+                select(ID_EVENT_S, ID_CLI, ID_CAMP, ID_DELIVERY, SEND_DATE, TARGET)
+
+```
+
+Alcune variabili rilevanti che vogliamo includere sono: <br>
+- Tasso di apertura medio (entro 14 giorni) delle comunicazioni ricevute dal cliente nei 30 giorni precedenti l'invio; <br>
+- Percentuale media di clic (entro 14 giorni) delle comunicazioni ricevute dal cliente nei 30 giorni precedenti l'invio.
+
+<br>
+
+Per avere una situazione comparabile stiamo prendendo in considerazione:
+- Target inviato dopo l'01/02/2019 e con i "window_days" antecedenti il 30/04/2019;
+- Target inviato ai clienti registrati da almeno 30 giorni.
+
+```{r}
+
+rate_window <- 14
+prev_window <- 30
+
+dt_start <- as.Date("2019-02-01")
+dt_end <- as.Date("2019-04-30") - window_days
+
+relevant_event <- df_sends %>%
+                  left_join(df_opens,
+                            by = c("ID_CLI", "ID_CAMP", "ID_DELIVERY", "TYP_CAMP")
+                            ) %>%
+                  filter(is.na(OPEN_DATE) | SEND_DATE <= OPEN_DATE) %>%
+                  left_join(df_clicks, 
+                            by = c("ID_CLI", "ID_CAMP", "ID_DELIVERY", "TYP_CAMP")
+                            ) %>%
+                  filter(is.na(CLICK_DATE) | SEND_DATE <= CLICK_DATE) %>%
+                  left_join(df_fails,
+                            by = c("ID_CLI", "ID_CAMP", "ID_DELIVERY", "TYP_CAMP")
+                            ) %>%
+                  filter(is.na(FAIL_DATE) | SEND_DATE <= FAIL_DATE) %>%
+                  mutate(DIFF_OPEN = as.integer(OPEN_DATE - SEND_DATE)) %>%
+                  mutate(DIFF_CLICK = as.integer(CLICK_DATE - SEND_DATE)) %>%
+                  filter(is.na(DIFF_OPEN) | DIFF_OPEN < rate_window) %>%
+                  filter(is.na(DIFF_CLICK) | DIFF_CLICK < rate_window)
+
+names(relevant_event) <- sapply(names(relevant_event), paste0, "_PREV")
+
+target_event_w_prev <- target_event %>% filter(SEND_DATE >= dt_start & SEND_DATE <= dt_end) %>%
+                       left_join(relevant_event,
+                                 by = c("ID_CLI" = "ID_CLI_PREV")
+                                 ) %>%
+                       filter(is.na(SEND_DATE_PREV) | (SEND_DATE_PREV < SEND_DATE & SEND_DATE <= SEND_DATE_PREV + prev_window)) %>%
+                       mutate(OPENED = if_else(OPEN_DATE_PREV <= SEND_DATE & SEND_DATE <= OPEN_DATE_PREV + prev_window, 1, 0)) %>%
+                       mutate(CLICKED = if_else(CLICK_DATE_PREV <= SEND_DATE & SEND_DATE <= CLICK_DATE_PREV + prev_window, 1, 0)) %>%
+                       mutate(FAILED = if_else(!is.na(ID_EVENT_F_PREV), 1, 0)) %>%
+                       group_by(ID_EVENT_S, ID_CLI, ID_CAMP, ID_DELIVERY, SEND_DATE,  TARGET) %>%
+                       summarize(NUM_SEND_PREV = n_distinct(ID_EVENT_S_PREV, na.rm = T),
+                                 NUM_OPEN_PREV = sum(OPENED, na.rm = T),
+                                 NUM_CLICK_PREV = sum(CLICKED, na.rm = T),
+                                 NUM_FAIL_PREV = sum(FAILED, na.rm = T)
+                                 ) %>%
+                       ungroup() %>%
+                       mutate(OPEN_RATE_PREV = NUM_OPEN_PREV/NUM_SEND_PREV) %>%
+                       mutate(CLICK_RATE_PREV = NUM_CLICK_PREV/NUM_OPEN_PREV) %>%
+                       mutate(W_SEND_PREV = as.factor(NUM_SEND_PREV > 0)) %>%
+                       mutate(W_FAIL_PREV = as.factor(NUM_FAIL_PREV > 0)) %>%
+                       mutate(SEND_WEEKDAY = as.factor(weekdays(SEND_DATE))) %>%
+                       mutate(OPEN_RATE_PREV = if_else(is.na(OPEN_RATE_PREV), 0, OPEN_RATE_PREV)) %>%
+                       mutate(CLICK_RATE_PREV = if_else(is.na(CLICK_RATE_PREV), 0, CLICK_RATE_PREV))
+
+
+```
+
+- Aggiunta dei dati dei clienti:
+
+```{r}
+
+df_master <- target_event_w_prev %>%
+             left_join(fidelity_clean %>%
+                       select(ID_CLI, ID_NEG, TYP_CLI_FID, COD_FID, STATUS_FID, FIRST_DT_ACTIVE, NUM_FIDs),
+                       by = "ID_CLI") %>%
+             filter(FIRST_DT_ACTIVE <= SEND_DATE) %>%
+           # filter(FIRST_DT_ACTIVE <= SEND_DATE - 30) %>%
+             mutate(AGE_FID = as.integer(SEND_DATE - FIRST_DT_ACTIVE)) %>%
+             left_join(account_clean,
+                       by = "ID_CLI") %>%
+             left_join(address_clean %>%
+                       select(ID_ADDRESS, PRV, REGION),
+                       by = "ID_ADDRESS") %>%
+             left_join(privacy_clean, 
+                       by = "ID_CLI") %>%
+             mutate(PRV = fct_explicit_na(PRV)) %>%
+             mutate(REGION = fct_explicit_na(REGION)) %>%
+             select(-ID_ADDRESS, -ID_CLI, -ID_CAMP, -ID_DELIVERY, -SEND_DATE, -FIRST_DT_ACTIVE)
+
+```
+
+- Controlliamo che non ci siano duplicati:
+
+```{r}
+
+df_master %>%
+  group_by(ID_EVENT_S) %>% 
+  summarize(num = n()) %>% 
+  group_by(num) %>%
+  count()
+
+```
+
+
+### Data Exploration
+
+Vediamo la frequenza dell'evento:
+
+```{r}
+
+df_master %>%
+  group_by(TARGET) %>%
+  summarize(NUM_EVENTs = n_distinct(ID_EVENT_S))
+
+df_master %>%
+  group_by(TARGET,  W_SEND_PREV) %>%
+  summarize(NUM_EVENTs = n_distinct(ID_EVENT_S), mean_OR = mean(OPEN_RATE_PREV, na.rm = T))
+
+str(df_master)
+summary(df_master)
+
+```
+
+### T-Test
+
+Controlliamo se una variabile continua ha una differenza significativa:
+
+```{r}
+
+t.test(NUM_SEND_PREV ~ TARGET, data = df_master)
+t.test(NUM_OPEN_PREV ~ TARGET, data = df_master)
+t.test(NUM_CLICK_PREV ~ TARGET, data = df_master)
+t.test(NUM_FAIL_PREV ~ TARGET, data = df_master)
+t.test(OPEN_RATE_PREV ~ TARGET, data = df_master)
+t.test(CLICK_RATE_PREV ~ TARGET, data = df_master)
+t.test(AGE_FID ~ TARGET, data = df_master)
+
+
+library(tidyr) # necessaria per l'utilizzo della funzione spread()
+
+prepare_chisq <- function(df, x){
+  y <- enquo(x)
+  
+
+  test_df <- df %>%
+    mutate(KEY = if_else(TARGET == "1", "OK", "KO")) %>%
+    select(UQ(y), KEY, ID_EVENT_S) %>%
+    group_by(UQ(y), KEY) %>%
+    summarize(n = n()) %>%
+    spread(KEY, n) %>%
+    ungroup() %>%
+    as.data.frame()
+
+  test_m <- test_df %>%
+    select(OK, KO) %>%
+    mutate(OK = if_else(is.na(OK), as.integer(0), OK)) %>%
+    mutate(KO = if_else(is.na(KO), as.integer(0), KO)) %>%
+    as.matrix() 
+  row.names(test_m) <- as.character(test_df[,1])
+
+  return(test_m)
+}
+
+plot_factor <- function(df, x, lab){
+  y <- enquo(x)
+
+  df_count_tot <- df %>%
+  group_by(UQ(y)) %>%
+  summarise(n_tot = n_distinct(ID_EVENT_S)) %>%
+  ungroup()
+
+  df_count <- df %>%
+  group_by(UQ(y), TARGET) %>%
+  summarise(n = n_distinct(ID_EVENT_S))
+
+  df <- df_count %>%
+  left_join(df_count_tot, by = lab) %>%
+  mutate(frac = round(n / n_tot, 2))
+
+  ggplot(data=df, aes(x=UQ(y), y=frac, fill=TARGET)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  geom_text(aes(x=UQ(y), y=frac, label = frac),
+            position = position_dodge(width = 1),
+            vjust = 2, size = 3, color = "white", fontface = "bold")
+}
+
+
+chisq.test(prepare_chisq(df_master, W_SEND_PREV))
+plot_factor(df_master, W_SEND_PREV, "W_SEND_PREV")
+
+chisq.test(prepare_chisq(df_master, W_FAIL_PREV))
+plot_factor(df_master, W_FAIL_PREV, "W_FAIL_PREV")
+
+chisq.test(prepare_chisq(df_master, SEND_WEEKDAY))
+plot_factor(df_master, SEND_WEEKDAY, "SEND_WEEKDAY")
+
+chisq.test(prepare_chisq(df_master, ID_NEG))
+plot_factor(df_master, ID_NEG, "ID_NEG")
+
+chisq.test(prepare_chisq(df_master, TYP_CLI_FID))
+plot_factor(df_master, TYP_CLI_FID, "TYP_CLI_FID")
+
+chisq.test(prepare_chisq(df_master, COD_FID))
+plot_factor(df_master, COD_FID, "COD_FID")
+
+chisq.test(prepare_chisq(df_master, STATUS_FID))
+plot_factor(df_master, STATUS_FID, "STATUS_FID")
+
+chisq.test(prepare_chisq(df_master, NUM_FIDs))
+plot_factor(df_master, NUM_FIDs, "NUM_FIDs")
+
+chisq.test(prepare_chisq(df_master, W_PHONE))
+plot_factor(df_master, W_PHONE, "W_PHONE")
+
+chisq.test(prepare_chisq(df_master, TYP_JOB))
+plot_factor(df_master, TYP_JOB, "TYP_JOB")
+
+chisq.test(prepare_chisq(df_master, EMAIL_PROVIDER_CLEAN))
+plot_factor(df_master, EMAIL_PROVIDER_CLEAN, "EMAIL_PROVIDER_CLEAN")
+
+chisq.test(prepare_chisq(df_master, PRV))
+plot_factor(df_master, PRV, "PRV")
+
+chisq.test(prepare_chisq(df_master, REGION))
+plot_factor(df_master, REGION, "REGION")
+
+chisq.test(prepare_chisq(df_master, FLAG_PRIVACY_1))
+plot_factor(df_master, FLAG_PRIVACY_1, "FLAG_PRIVACY_1")
+
+chisq.test(prepare_chisq(df_master, FLAG_PRIVACY_2))
+plot_factor(df_master, FLAG_PRIVACY_2, "FLAG_PRIVACY_2")
+
+chisq.test(prepare_chisq(df_master, FLAG_DIRECT_MKT))
+plot_factor(df_master, FLAG_DIRECT_MKT, "FLAG_DIRECT_MKT")
+
+```
+
+La fase di pre-processing è volta al termine.
+Esportiamo quindi il dataset finale, al fine di poterlo utilizzare senza problemi per le elaborazioni successive:
+
+```{r}
+
+write.csv2(df_master, "C:/Users/MioPC/Documents/Università degli Studi di Milano-Bicocca/IV° Anno - Data Science/Web Marketing and Communication Management/Laboratorio/Progetto/df_master.csv", row.names = FALSE)
+
+```
+
+## Modellazione
+
+## Propensity of e-mail engagement
+
+Dal momento che il 95% delle osservazioni nel dataset sono uguali a 0 (e-mail non aperta) bilanciamo il dataset campiondandolo così da ottenere la medesima proporzione di 0 e 1.
+
+```{r}
+
+target_0 <- df_master %>% filter(TARGET == 0)
+target_1 <- df_master %>% filter(TARGET == 1)
+
+balanced_0 <- target_0[sample(nrow(target_0), nrow(target_1)), ]
+
+df_master_balanced <- rbind(balanced_0, target_1)
+
+summary(df_master_balanced)
+
+```
+
+### T-Test and Chi-Test
+
+Ricontrollo per vedere la significatività:
+
+```{r}
+
+t.test(NUM_SEND_PREV ~ TARGET, data = df_master_balanced)
+t.test(NUM_OPEN_PREV ~ TARGET, data = df_master_balanced)
+t.test(NUM_CLICK_PREV ~ TARGET, data = df_master_balanced)
+t.test(NUM_FAIL_PREV ~ TARGET, data = df_master_balanced)
+t.test(OPEN_RATE_PREV ~ TARGET, data = df_master_balanced)
+t.test(CLICK_RATE_PREV ~ TARGET, data = df_master_balanced)
+t.test(AGE_FID ~ TARGET, data = df_master_balanced)
+
+
+chisq.test(prepare_chisq(df_master_balanced, W_FAIL_PREV))
+plot_factor(df_master_balanced, W_FAIL_PREV, "W_FAIL_PREV")
+
+chisq.test(prepare_chisq(df_master_balanced, SEND_WEEKDAY))
+plot_factor(df_master_balanced, SEND_WEEKDAY, "SEND_WEEKDAY")
+
+chisq.test(prepare_chisq(df_master_balanced, ID_NEG))
+plot_factor(df_master_balanced, ID_NEG, "ID_NEG")
+
+chisq.test(prepare_chisq(df_master_balanced, COD_FID))
+plot_factor(df_master_balanced, COD_FID, "COD_FID")
+
+chisq.test(prepare_chisq(df_master_balanced, W_PHONE))
+plot_factor(df_master_balanced, W_PHONE, "W_PHONE")
+
+chisq.test(prepare_chisq(df_master_balanced, EMAIL_PROVIDER_CLEAN))
+plot_factor(df_master_balanced, EMAIL_PROVIDER_CLEAN, "EMAIL_PROVIDER_CLEAN")
+
+chisq.test(prepare_chisq(df_master_balanced, PRV))
+plot_factor(df_master_balanced, PRV, "PRV")
+
+chisq.test(prepare_chisq(df_master_balanced, REGION))
+plot_factor(df_master_balanced, REGION, "REGION")
+```
+
+"REGION", "PRV", "EMAIL_PROVIDER_CLEAN" non sono significative.
+
+```{r}
+
+table_region <- table(df_master_balanced$TARGET, df_master_balanced$REGION)
+apply(table_region, 2, function(x) sapply(x, function(y) y/sum(x) * 100, simplify = TRUE))
+
+table_province <- table(df_master_balanced$TARGET, df_master_balanced$PRV)
+apply(table_province, 2, function(x) sapply(x, function(y) y/sum(x) * 100, simplify = TRUE))
+
+table_email_provider <- table(df_master_balanced$TARGET, df_master_balanced$EMAIL_PROVIDER_CLEAN)
+apply(table_email_provider, 2, function(x) sapply(x, function(y) y/sum(x) * 100, simplify = TRUE))
+
+summary(df_master_balanced)
+
+```
+
+### Partizione dei dati in train e test set
+
+```{r}
+
+library(MLmetrics)
+library(caret)
+
+df_master_clean <- df_master
+
+df_master_feature_selected <- df_master_balanced %>% filter(!is.na(EMAIL_PROVIDER_CLEAN)) %>%select(-c(EMAIL_PROVIDER_CLEAN, PRV, REGION, W_PHONE, ID_EVENT_S, TYP_CLI_ACCOUNT,TYP_JOB,W_SEND_PREV, FLAG_PRIVACY_2, FLAG_PRIVACY_1, FLAG_DIRECT_MKT, STATUS_FID, NUM_FIDs, TYP_CLI_FID))
+
+
+set.seed(12345)
+train_ind <- sample(seq_len(nrow(df_master_feature_selected)),
+                    size = 0.7 * nrow(df_master_feature_selected))
+
+train = df_master_feature_selected[train_ind, ]
+test = df_master_feature_selected[-train_ind, ]
+
+```
+
+## Algoritmi implementati
+
+1.1 **Generalized Linear Model (GLM)**
+
+```{r}
+
+logistic <- glm(TARGET ~ ., train, family = "binomial")
+
+pred <- predict(logistic, test)
+pred_01 <- if_else(pred > 0.5, 1, 0)
+table_mod_logistic <- table(pred_01, test$TARGET)
+
+cm <- confusionMatrix(table_mod_logistic)
+F1_Score(pred_01, test$TARGET, positive = "1")
+cm
+
+```
+
+1.2 **GLM con stepwise selection**
+
+```{r}
+
+library(Rcmdr)
+ 
+#selection <- stepwise(logistic, direction = "forward", criterion = "AIC", trace = FALSE)
+
+model_selected <- glm(TARGET ~ OPEN_RATE_PREV + NUM_OPEN_PREV + NUM_SEND_PREV + 
+                      SEND_WEEKDAY + COD_FID, train, family = "binomial")
+
+pred_s <- predict(model_selected, test)
+pred_01s <- if_else(pred_s > 0.5, 1, 0)
+table_mod_selected <- table(pred_01s, test$TARGET)
+
+cm <- confusionMatrix(table_mod_selected)
+cm
+
+```
+
+2. **Random Forest**
+
+```{r}
+
+library(randomForest)
+
+random_forest <- randomForest(TARGET ~ OPEN_RATE_PREV + NUM_OPEN_PREV + NUM_SEND_PREV + 
+                 SEND_WEEKDAY + COD_FID, train, importance = TRUE)
+
+summary(random_forest)
+
+p_forest <- predict(random_forest, test)
+table_mod_forest <- table(p_forest, test$TARGET)
+
+confusionMatrix(table_mod_forest)
+F1_Score(p_forest, test$TARGET, positive = "1")
+
+```
+
+3. **Decision Tree**
+
+```{r}
+
+library (rpart)
+
+tree <- rpart(formula = TARGET ~ OPEN_RATE_PREV + NUM_OPEN_PREV + NUM_SEND_PREV + 
+                        SEND_WEEKDAY + COD_FID, 
+                        data = train, 
+                        method = "class")
+
+pred_T <- predict(object = tree, 
+                  newdata = test,
+                  type = "class")
+
+table_mod_tree <- table(pred_T, test$TARGET)
+
+cm <- confusionMatrix(data = pred_T, reference = test$TARGET)
+F1_Score(pred_T, test$TARGET, positive = "1")
+
+p_forest
+
+cm
+
+```
+
+4. **Bagging**
+
+```{r}
+
+library(ipred)
+
+bag <- bagging(TARGET ~ OPEN_RATE_PREV + NUM_OPEN_PREV + NUM_SEND_PREV + 
+               SEND_WEEKDAY + COD_FID, train, nbagg = 25)
+
+pred_bag <- predict(bag, test[, -1])
+confusionMatrix(pred_bag, test$TARGET)
+
+F1_Score(pred_bag, test$TARGET, positive = "1") 
+
+```
+
+5. **Naive Bayes**
+
+```{r}
+
+library(e1071)
+
+nb <- naiveBayes(TARGET ~ OPEN_RATE_PREV + NUM_OPEN_PREV + NUM_SEND_PREV + 
+                 SEND_WEEKDAY + COD_FID, train) 
+
+pred_nb <- predict(nb, test[, -1])
+
+confusionMatrix(pred_nb, test$TARGET)
+
+F1_Score(pred_nb, test$TARGET, positive = "1")
+
+```
+
+
