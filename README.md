@@ -58,11 +58,11 @@ Here we show only the cover:
 &#8860; &nbsp; **Giovanna Saracino**
 
 - *Current Studies*: Data Science M.Sc. Student at Università degli Studi di Milano-Bicocca (UniMiB);
-- *Background*: Bachelor degree in Information Technology at Università di Trento.
+- *Background*: Bachelor degree in Information Technology at Università degli Studi di Bari.
 <br>
 
 <p align = "center">
-  <a href = "https://www.linkedin.com/in/angela-prade-b805b6182/"><img src="https://github.com/malborroni/Foundations_of_Computer-Science/blob/master/images/Linkedin%20logo.png" width = "2.3%"></a>
+  <a href = "https://it.linkedin.com/in/giovanna-saracino-073131161"><img src="https://github.com/malborroni/Foundations_of_Computer-Science/blob/master/images/Linkedin%20logo.png" width = "2.3%"></a>
   <a href = "https://fakelink.com"><img src="https://raw.githubusercontent.com/malborroni/Foundations_of_Computer-Science/master/images/GitHub.png" width = "2.5%"></a>
 </p>
 
